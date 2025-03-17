@@ -1,0 +1,118 @@
+library("Seurat")
+library("patchwork")
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+library("DESeq2")
+library("poibin")
+library("sgof")
+library(stats)
+library("multtest")
+library("metap")
+library(Biobase)
+library(GEOquery)
+library(tidyverse)
+library(readr)
+library("forcats")
+library("stringr")
+library("ggrepel")
+library(sva)
+
+setwd("D:.../Mapping and annotating query datasets/GSE101984")
+#load reference sequencing data and create seurat object
+data <- read.table("GSE101984_RAW.DATA.txt", header=TRUE, row.names=1)
+data <- CreateSeuratObject(counts = data, project = "GSE101984", min.cells = 0, min.features = 0, names.delim = "_", names.field = 1)
+
+#  QC accroding to the merthods from thr paper including reference data
+data[["percent.mt"]] <- PercentageFeatureSet(data, pattern = "^mt-")
+data1 <- subset(data, subset =nFeature_RNA > 200 & nFeature_RNA < 8500 & percent.mt < 3 & nCount_RNA > 1000)
+
+# Normalize data, normalization.method = "LogNormalize", scale.factor = 10000
+data1 <- NormalizeData(data1)
+
+# Identify variable genes
+data1 <- FindVariableFeatures(data1, selection.method = "vst", nfeatures = 2000)
+
+# scale data
+data1 <- ScaleData(data1, verbose = FALSE)
+
+# Run PCA
+data1 <- RunPCA(data1, npcs = 100)
+#Find clusters
+data1 <- FindNeighbors(data1, dims = 1:20)
+data1 <- FindClusters(data1, resolution = 0.5, algorithm = 3)
+
+# Domension reduction and visulization
+data1<- RunUMAP(data1, reduction = "pca", dims = 1:20)
+P1 <- DimPlot(data1, reduction = "umap", label = TRUE, repel = TRUE)
+P2 <- FeaturePlot(data1, features = c("Plp1", "Mbp", "Epcam","Tubb3", "Scn9a","Snap25"), slot = "data", reduction = "umap", min.cutoff = 'q0',  blend.threshold = 0)
+P1+P2
+
+# subset TG neurons
+NEURON <- subset(x = data1, idents = c("14","2","5","3","19","0","6","4"))
+
+# Save TG neuron's raw count
+NeuronwithoutQC2<- write.table(as.matrix(GetAssayData(object = NEURON, slot = "counts")), 'Neuron2.RNA.DATA.txt', sep = '\t', row.names = T, col.names = T, quote = F)
+
+########Clustering neurons######
+
+# Load neurons's raw counts and create seurat object
+data2 <- read.table("Neuron2.RNA.DATA.txt", header=TRUE, row.names=1)
+data2 <- CreateSeuratObject(counts = data2, project = "referenceneuron", min.cells = 6, min.features = 0, names.delim = "_", names.field = 1)
+
+# QC for neurons accroding to the merthods from the paper including reference data
+data2[["percent.mt"]] <- PercentageFeatureSet(data2, pattern = "^mt-")
+data2 <- subset(data2, subset =nFeature_RNA > 500 & nFeature_RNA < 7500 & percent.mt < 2 & nCount_RNA > 1000)
+
+# Normalize data, normalization.method = "LogNormalize", scale.factor = 10000
+data2 <- NormalizeData(data2,normalization.method = "LogNormalize")
+
+data2 <- FindVariableFeatures(data2, selection.method = "vst", nfeatures = 2000)
+
+
+all.genes <- rownames(data2)
+data2 <- ScaleData(data2, features = all.genes)
+
+data2 <- RunPCA(data2, npcs = 100)
+
+data2 <- FindNeighbors(data2, dims = 1:20)
+data2 <- FindClusters(data2, resolution = 0.6, algorithm = 3)
+data2<- RunUMAP(data2, reduction = "pca", dims = 1:20,return.model=TRUE)
+
+data2 <- RenameIdents(object = data2, `1` = "C8-Trpa1&Calca")
+data2 <- RenameIdents(object = data2, `9` = "C13-Mrgprd")
+data2 <- RenameIdents(object = data2, `2` = "C13-Mrgprd")
+data2 <- RenameIdents(object = data2, `3` = "C4-S100b")
+data2 <- RenameIdents(object = data2, `10` = "C6-Calca&S100b")
+data2 <- RenameIdents(object = data2, `4` = "c1/2-Trpm8")
+data2 <- RenameIdents(object = data2, `7` = "c1/2-Trpm8")
+data2 <- RenameIdents(object = data2, `0` = "C7/9/10-Trpv1&Calca")
+data2 <- RenameIdents(object = data2, `6` = "c3-Cd34")
+data2 <- RenameIdents(object = data2, `5` = "c3-Cd34")
+data2 <- RenameIdents(object = data2, `8` = "c5-Fxyd2&S100b&Calca")
+data2 <- RenameIdents(object = data2, `11` = "c11-Nppb")
+data2 <- RenameIdents(object = data2, `12` = "c12-Etv1")
+data2 <- RenameIdents(object = data2, `13` = "unKnow")
+data2[["subgroup"]] <- Idents(object = data2)
+
+P1 <- DimPlot(data2, reduction = "umap", label = TRUE, repel = TRUE)
+
+anchors <- FindTransferAnchors(reference = data2, query = merge, dims = 1:20, reference.reduction = "pca")
+
+merge <- MapQuery(anchorset = anchors, reference = data2, query = merge, refdata = list(celltype = "subgroup"), reference.reduction = "pca", reduction.model = "umap" )
+
+p1 <- DimPlot(data2, reduction = "umap", group.by = "subgroup", label = TRUE, label.size = 3, repel = TRUE,cols = c("black", "red", "yellow","darkorange","purple","blue","green","Cyan","darkgreen","DeepPink","Brown"), pt.size = 1.2) + NoLegend() + ggtitle("Reference annotations")
+p2 <- DimPlot(merge, reduction = "ref.umap", group.by = "predicted.celltype", label = FALSE,label.size = 3, repel = TRUE,cols = c("green","yellow","red","deeppink","purple","darkgreen","darkorange","cyan","blue","brown","black"), pt.size = 1.2) + ggtitle("Query transferred labels")
+p1 + p2
+table(merge$predicted.celltype)
+Genes = c( "Trpm8", "Nppb", "Etv1", "Mrgprd", "Cd34", "S100b", "Fxyd2",  "Calca", "Trpv1", "Trpa1")
+
+DotPlot(merge, scale.by="size", features = Genes, group.by = "predicted.celltype")+ theme(axis.text.x = element_text(angle = 45, hjust = 1))+coord_flip()+  scale_color_gradientn(
+  colors = c("white", "lightblue", "red"),  values = scales::rescale(c(-1, 0, 1)))
+  
+NTG <- subset(merge, idents=c("Control", "NTG"))
+TBI <- subset(merge, idents=c("mTBI","Sham"))
+DimPlot(NTG, cols=c("green","greenyellow","red","deeppink","purple","darkgreen","darkorange","cyan","blue","brown","black"), reduction = "ref.umap",group.by = "predicted.celltype",label = FALSE,label.size = 4, pt.size=4,repel = TRUE, raster = FALSE, shape.by = "orig.ident")+ ggtitle("Query transferred labels")
+TBI$orig.ident <- factor(TBI$orig.ident, levels = c("Sham", "mTBI"))
+DimPlot(TBI, cols=c("green","greenyellow","red","deeppink","purple","darkgreen","darkorange","cyan","blue","brown","black"), reduction = "ref.umap",group.by = "predicted.celltype",label = FALSE,label.size = 4, pt.size=4,repel = TRUE, raster = FALSE, shape.by = "orig.ident")+ ggtitle("Query transferred labels")
