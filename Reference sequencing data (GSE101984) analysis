@@ -19,13 +19,13 @@ library("stringr")
 library("ggrepel")
 library(sva)
 
-######subseting neurons from reference seuqencing data including non-neuron##########
+######Subsetting neurons from the reference sequencing data, which includes non-neuronal cells##########
 setwd("D:.../Mapping and annotating query datasets/GSE101984")
 #load reference sequencing data and create seurat object
 data <- read.table("GSE101984_RAW.DATA.txt", header=TRUE, row.names=1)
 data <- CreateSeuratObject(counts = data, project = "GSE101984", min.cells = 0, min.features = 0, names.delim = "_", names.field = 1)
 
-#  QC accroding to the merthods from thr paper including reference data
+#  Quality control (QC) was performed following the methods from the paper which includes reference data
 data[["percent.mt"]] <- PercentageFeatureSet(data, pattern = "^mt-")
 data1 <- subset(data, subset =nFeature_RNA > 200 & nFeature_RNA < 8500 & percent.mt < 3 & nCount_RNA > 1000)
 
@@ -63,7 +63,7 @@ NeuronwithoutQC2<- write.table(as.matrix(GetAssayData(object = NEURON, slot = "c
 data2 <- read.table("Neuron2.RNA.DATA.txt", header=TRUE, row.names=1)
 data2 <- CreateSeuratObject(counts = data2, project = "referenceneuron", min.cells = 6, min.features = 0, names.delim = "_", names.field = 1)
 
-# QC for neurons accroding to the merthods from the paper including reference data
+# Quality control (QC) was performed following the methods from the paper which includes reference data
 data2[["percent.mt"]] <- PercentageFeatureSet(data2, pattern = "^mt-")
 data2 <- subset(data2, subset =nFeature_RNA > 500 & nFeature_RNA < 7500 & percent.mt < 2 & nCount_RNA > 1000)
 
@@ -104,7 +104,7 @@ data2 <- RenameIdents(object = data2, `12` = "c12-Etv1")
 data2 <- RenameIdents(object = data2, `13` = "unKnow")
 data2[["subgroup"]] <- Idents(object = data2)
 
-Plot neurons' clusters
+Plot neuronal clusters
 P1 <- DimPlot(data2, reduction = "umap", label = TRUE, repel = TRUE)
 
 
