@@ -22,50 +22,57 @@ library(circlize)
 
 #C means CGRP RESPONDER & PACAP NONRESPONDER, D means CGRP RESPONDER & PACAP RESPONDER)
 
-setwd("D:/pik3cd project/material")
+setwd("D:...")
+
+#load sequencing data and create seurat object
 bat1 <- read.table("all.gene_counts_NTG.txt", header=TRUE, row.names=1)
 bat2 <- read.table("all.gene_counts_TBI.txt", header=TRUE, row.names=1)
 
 bat1 <- CreateSeuratObject(counts = bat1, project = "scRNA-SEQ-NTG", min.cells = 0, min.features = 0, names.delim = "_", names.field = 4)
 bat2 <- CreateSeuratObject(counts = bat2, project = "scRNA-SEQ-NTG", min.cells = 0, min.features = 0, names.delim = "_", names.field = 5)
 
-######QC######
+#QC
 bat1[["percent.mt"]] <- PercentageFeatureSet(bat1, pattern = "^mt-")
 bat2[["percent.mt"]] <- PercentageFeatureSet(bat2, pattern = "^mt-")
-
-
 bat1 <- subset(bat1, subset = nFeature_RNA > 5000 & nFeature_RNA < 12000 & percent.mt < 10)
 bat2 <- subset(bat2, subset = nFeature_RNA > 5000 & nFeature_RNA < 12000 & percent.mt < 10)
-
 merge <- merge(x = bat1, y = bat2)
 
+# Normalize data, normalization.method = "LogNormalize", scale.factor = 10000
 merge <- NormalizeData(merge)
+
+# Identify variable genes
 merge <- FindVariableFeatures(merge)
+
+# scale data
 all.genes <- rownames(merge)
 merge <- ScaleData(merge, features = all.genes)
 merge <- JoinLayers(merge)
 
+#############DEG analysis comparing CGRP responders & PACAP non-responders with CGRP responders & PACAP responders in control group#################
 
 genes <- rownames(merge)[grep("^Gm", rownames(merge), invert=TRUE)]
 Control.markers.model<- FindMarkers(merge,ident.1 = "Control.C",ident.2 = "Control.D",feature=genes,test.use = "bimod", min.pct=0.5)
+
+# Adjust p-value using the Benjamini-Hochberg (BH) method
 Control.raw_p_values <- Control.markers.model$p_val
 Control.djusted_p_values <- p.adjust(Control.raw_p_values, method = "BH")
 Control.markers.model$p_val_adj <- Control.djusted_p_values
 
+# DEG analysis comparing CGRP responders & PACAP non-responders with CGRP responders & PACAP responders in sham group
 Sham.markers.model<- FindMarkers(merge,ident.1 = "Sham.C",ident.2 = "Sham.D",feature=genes,test.use = "bimod", min.pct=0.5)
+
+# Adjust p-value using the Benjamini-Hochberg (BH) method
 Sham.raw_p_values <- Sham.markers.model$p_val
 Sham.djusted_p_values <- p.adjust(Sham.raw_p_values, method = "BH")
 Sham.markers.model$p_val_adj <- Sham.djusted_p_values
 
+#Identify shared DEGs in both control and sham groups
 names(Control.markers.model) <- paste0(names(Control.markers.model), ".Control")
 Control.markers.model$gene <- rownames(Control.markers.model)
-
 names(Sham.markers.model) <- paste0(names(Sham.markers.model), ".Sham")
 Sham.markers.model$gene <- rownames(Sham.markers.model)
-
-
 merge_dat <- merge(Sham.markers.model, Control.markers.model, by= "gene")
-
 common_up <- merge_dat$gene[which(merge_dat$p_val_adj.Control < 0.05 & 
                                  merge_dat$p_val_adj.Sham< 0.05 & merge_dat$avg_log2FC.Sham> 0 & merge_dat$avg_log2FC.Control>0)]
 common_down <- merge_dat$gene[which(merge_dat$p_val_adj.Control < 0.05 & 
@@ -83,38 +90,32 @@ DoHeatmap(avg_expr,features = "Fos")+scale_fill_gradientn(colors = c("green", "w
 
 
 ######################################DIEASE DIFFERENCES#######################################
+
+# DEGs analysis comparing Control with NTG groups within CGRP responders & PACAP non-responders
 Control_NTG_C.markers.model<- FindMarkers(merge,ident.1 = "NTG.C",ident.2 = "Control.C",feature=genes,test.use = "bimod", min.pct=0.5)
 Control_NTG_C.raw_p_values <- Control_NTG_C.markers.model$p_val
 Control_NTG_C.djusted_p_values <- p.adjust(Control_NTG_C.raw_p_values, method = "BH")
 Control_NTG_C.markers.model$p_val_adj <- Control_NTG_C.djusted_p_values
-Control_NTG_C.positive_genes <- Control_NTG_C.markers.model[Control_NTG_C.markers.model$p_val_adj < 0.01, ]
-write.table(Control_NTG_C.markers.model, 'Control_NTG_C.markers.model.txt', sep = '\t', row.names = T, col.names = T, quote = F)
 
-
-
+# DEGs analysis comparing Control with NTG groups within CGRP & PACAP responders
 Control_NTG_D.markers.model<- FindMarkers(merge,ident.1 = "NTG.D",ident.2 = "Control.D",feature=genes,test.use = "bimod", min.pct=0.5)
 Control_NTG_D.raw_p_values <- Control_NTG_D.markers.model$p_val
 Control_NTG_D.djusted_p_values <- p.adjust(Control_NTG_D.raw_p_values, method = "BH")
 Control_NTG_D.markers.model$p_val_adj <- Control_NTG_D.djusted_p_values
-Control_NTG_D.positive_genes <- Control_NTG_D.markers.model[Control_NTG_D.markers.model$p_val_adj < 0.01, ]
-write.table(Control_NTG_D.markers.model, 'Control_NTG_D.markers.model.txt', sep = '\t', row.names = T, col.names = T, quote = F)
 
+# DEGs analysis comparing sham with mTBI groups within CGRP responders & PACAP non-responders
 SHAM_mTBI_C.markers.model<- FindMarkers(merge,ident.1 = "mTBI.C",ident.2 = "Sham.C",feature=genes,test.use = "bimod", min.pct=0.5)
 SHAM_mTBI_C.raw_p_values <- SHAM_mTBI_C.markers.model$p_val
 SHAM_mTBI_C.djusted_p_values <- p.adjust(SHAM_mTBI_C.raw_p_values, method = "BH")
 SHAM_mTBI_C.markers.model$p_val_adj <- SHAM_mTBI_C.djusted_p_values
-SHAM_mTBI_C.positive_genes <- SHAM_mTBI_C.markers.model[SHAM_mTBI_C.markers.model$p_val_adj < 0.01, ]
-write.table(SHAM_mTBI_C.markers.model, 'SHAM_mTBI_C.markers.model.txt', sep = '\t', row.names = T, col.names = T, quote = F)
 
-
+# DEGs analysis comparing sham with mTBI groups within CGRP & PACAP responders
 SHAM_mTBI_D.markers.model<- FindMarkers(merge,ident.1 = "mTBI.D",ident.2 = "Sham.D",feature=genes,test.use = "bimod", min.pct=0.5)
 SHAM_mTBI_D.raw_p_values <- SHAM_mTBI_D.markers.model$p_val
 SHAM_mTBI_D.djusted_p_values <- p.adjust(SHAM_mTBI_D.raw_p_values, method = "BH")
 SHAM_mTBI_D.markers.model$p_val_adj <-SHAM_mTBI_D.djusted_p_values
-SHAM_mTBI_D.positive_genes <- SHAM_mTBI_D.markers.model[SHAM_mTBI_D.markers.model$p_val_adj < 0.01, ]
-write.table(SHAM_mTBI_D.markers.model, 'SHAM_mTBI_D.markers.model.txt', sep = '\t', row.names = T, col.names = T, quote = F)
 
-
+########shared genes analysis##################
 names(Control_NTG_C.markers.model) <- paste0(names(Control_NTG_C.markers.model), ".NTG_C")
 Control_NTG_C.markers.model$gene <- rownames(Control_NTG_C.markers.model)
 
@@ -134,12 +135,58 @@ merge_dat4 <- merge(Control_NTG_D.markers.model, SHAM_mTBI_D.markers.model, by= 
 
 merge_dat_diease <- merge(merge_dat1, merge_dat2, by= "gene")
 
+#Identify shared DEGs in both NTG and mTBI models within CGRP responders & PACAP non-responders
 common_UP3 <- merge_dat3$gene[which(merge_dat3$p_val_adj.NTG_C < 0.01 & 
                                       merge_dat3$p_val_adj.mTBI_C < 0.01& merge_dat3$avg_log2FC.NTG_C> 0 & merge_dat3$avg_log2FC.mTBI_C>0)]
 common_DOWN3 <- merge_dat3$gene[which(merge_dat3$p_val_adj.NTG_C < 0.01 & 
                                         merge_dat3$p_val_adj.mTBI_C < 0.01& merge_dat3$avg_log2FC.NTG_C< 0 & merge_dat3$avg_log2FC.mTBI_C<0)]
 
+#Identify shared DEGs in both NTG and mTBI models within CGRP & PACAP responders
 common_UP4 <- merge_dat4$gene[which(merge_dat4$p_val_adj.NTG_D < 0.01 & 
                                       merge_dat4$p_val_adj.mTBI_D < 0.01& merge_dat4$avg_log2FC.NTG_D> 0 & merge_dat4$avg_log2FC.mTBI_D>0)]
 common_DOWN4 <- merge_dat4$gene[which(merge_dat4$p_val_adj.NTG_D < 0.01 & 
                                         merge_dat4$p_val_adj.mTBI_D < 0.01& merge_dat4$avg_log2FC.NTG_D< 0 & merge_dat4$avg_log2FC.mTBI_D<0)]
+
+#Identify shared DEGs in both CGRP responders & PACAP non-responders and CGRP & PACAP responders in NTG model
+common_UP5 <- merge_dat1$gene[which(merge_dat1$p_val_adj.NTG_C < 0.01 & 
+                                      merge_dat1$p_val_adj.NTG_D < 0.01& merge_dat1$avg_log2FC.NTG_C> 0& merge_dat1$avg_log2FC.NTG_D>0)]
+common_DOWN5 <- merge_dat1$gene[which(merge_dat1$p_val_adj.NTG_C < 0.01 & 
+                                        merge_dat1$p_val_adj.NTG_D < 0.01& merge_dat1$avg_log2FC.NTG_C< 0 & merge_dat1$avg_log2FC.NTG_D< -0)]
+
+#Identify shared DEGs in both CGRP responders & PACAP non-responders and CGRP & PACAP responders in mTBI model
+common_UP6 <- merge_dat2$gene[which(merge_dat2$p_val_adj.mTBI_C < 0.01 & 
+                                      merge_dat2$p_val_adj.mTBI_D < 0.01& merge_dat2$avg_log2FC.mTBI_C> 0 & merge_dat2$avg_log2FC.mTBI_D>0)]
+common_DOWN6 <- merge_dat2$gene[which(merge_dat2$p_val_adj.mTBI_C < 0.01 & 
+                                        merge_dat2$p_val_adj.mTBI_D < 0.01 & merge_dat2$avg_log2FC.mTBI_C< 0 & merge_dat2$avg_log2FC.mTBI_D<  0)]
+
+#####Heatmaps for all shared genes analysis
+control_NTG <-  subset(merge, idents=c("Control.C", "Control.D", "NTG.C", "NTG.D"))
+DoHeatmap(control_NTG,features = c(common_DOWN5, common_UP5))
+
+Sham_mTBI <-  subset(merge, idents=c("Sham.C", "Sham.D", "mTBI.C", "mTBI.D"))
+my_levels <- c("Sham.C", "Sham.D", "mTBI.C", "mTBI.D")
+levels(Sham_mTBI) <- my_levels
+DoHeatmap(Sham_mTBI,features = c(common_DOWN6, common_UP6))
+
+
+c_c <- subset(merge, idents=c("Control.C", "mTBI.C", "NTG.C", "Sham.C"))
+my_levels <- c("Control.C", "Sham.C", "NTG.C", "mTBI.C")
+levels(c_c) <- my_levels
+label3 <-c("Trpm7","Pik3cd","Kcnk4","Rasa2","Gpm6b","Slc17a7")
+labels <- rep(x = "transparent", times = length(x = c(common_DOWN3,common_UP3)))
+labels[match(x = label3, table = c(common_DOWN3,common_UP3))] <- "red"
+DoHeatmap(object = c_c, features = c(common_DOWN3,common_UP3)) + theme(axis.text.y = element_text(color = rev(x = labels)))
+
+d_d <- subset(merge, idents=c("Control.D", "mTBI.D", "NTG.D", "Sham.D"))
+my_levels <- c("Control.D", "Sham.D", "NTG.D", "mTBI.D")
+levels(d_d) <- my_levels
+label4 <-c("Teme8","Pik3cd","Kcnq3","Kcnq4","Rbpj","Dock5")
+labels <- rep(x = "transparent", times = length(x = c(common_DOWN4,common_UP4)))
+labels[match(x = label4, table = c(common_DOWN4,common_UP4))] <- "red"
+DoHeatmap(object = d_d, features = c(common_DOWN4,common_UP4)) + theme(axis.text.y = element_text(color = rev(x = labels)))
+
+labels <- rep(x = "transparent", times = length(x = c(common_DOWN6,common_UP6)))
+labels[match(x = label, table = c(common_DOWN6,common_UP6))] <- "red"
+DoHeatmap(object = Sham_mTBI, features = c(common_DOWN6,common_UP6)) + theme(axis.text.y = element_text(color = rev(x = labels)))
+
+label <-c("P2rx4","Slc30a9","Kcnmb4","Gabrg2","Cnr1","Grm4","Ngf","Pik3cd","Nutf2","Pomc","Becn1","Trmt10b","Tmem143","Thrsp","Guf1","Cyp4f13")
